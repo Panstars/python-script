@@ -1,9 +1,7 @@
 name: Build EXE
-
 on:
   push:
     branches: [master]
-
 jobs:
   build:
     runs-on: windows-latest
@@ -13,16 +11,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install pyinstaller
-      - name: Build rename_files
-        run: pyinstaller --onefile --console --name rename_files rename_files.py
-      - name: Build flatten_folder
-        run: pyinstaller --onefile --console --name flatten_folder flatten_folder.py
-      - name: Build wav_to_txt
-        run: pyinstaller --onefile --windowed --name wav_to_txt wav_to_txt.py
+      - run: pyinstaller --onefile --console --name wav_duration_stat wav_duration_stat.py
       - uses: actions/upload-artifact@v4
         with:
           name: executables
-          path: |
-            dist/rename_files.exe
-            dist/flatten_folder.exe
-            dist/wav_to_txt.exe
+          path: dist/*.exe
