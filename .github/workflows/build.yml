@@ -10,8 +10,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install pyinstaller openpyxl
-      - run: pyinstaller --onefile --console --name filter_wav_by_excel filter_wav_by_excel.py
+      - run: pip install pyinstaller pysimplegui
+      - name: Build WAV Renamer
+        run: pyinstaller --onefile --console --name wav_renamer wav_renamer.py
       - uses: actions/upload-artifact@v4
         with:
           name: executables
