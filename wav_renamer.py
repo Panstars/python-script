@@ -1,210 +1,180 @@
 #!/usr/bin/env python3
 """
-WAV 文件重编号工具 - 可视化界面
+WAV 文件重编号工具 - tkinter 可视化界面
 功能：选择文件夹，预览修改，应用编号
 """
 
 import os
-import re
-import PySimpleGUI as sg
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
-from datetime import datetime
 
-sg.theme('LightBlue3')
-
-def get_wav_files(folder_path):
-    """获取文件夹中所有 WAV 文件"""
-    wav_files = []
-    if os.path.isdir(folder_path):
-        for f in sorted(os.listdir(folder_path)):
-            if f.lower().endswith('.wav'):
-                wav_files.append(f)
-    return wav_files
-
-def generate_new_name(original_name, start_num, digits, prefix, keep_original, keep_length):
-    """生成新文件名"""
-    # 提取原文件名（不含扩展名）
-    name_without_ext = Path(original_name).stem
+class WavRenamerApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("WAV 文件重编号工具")
+        self.root.geometry("700x550")
+        
+        self.folder_path = tk.StringVar()
+        self.start_num = tk.IntVar(value=1)
+        self.digits = tk.StringVar(value="4")
+        self.prefix = tk.StringVar()
+        self.keep_original = tk.BooleanVar(value=False)
+        self.keep_length = tk.IntVar(value=4)
+        
+        self.wav_files = []
+        self.current_folder = ""
+        
+        self.create_widgets()
     
-    # 计算新编号
-    new_num = start_num
-    
-    # 构建新文件名
-    if prefix:
-        new_name = f"{prefix}{new_num:0{digits}d}"
-    else:
-        new_name = f"{new_num:0{digits}d}"
-    
-    # 如果要保留原文件名的部分
-    if keep_original and keep_length > 0:
-        # 保留原文件名的前 N 个字符
-        new_name = f"{new_name}_{name_without_ext[:keep_length]}"
-    
-    return f"{new_name}.wav"
-
-def main():
-    # 布局定义
-    layout = [
+    def create_widgets(self):
         # 文件夹选择
-        [
-            sg.Text('文件夹:', size=(8, 1)),
-            sg.Input(key='-FOLDER-', size=(50, 1), readonly=True),
-            sg.FolderBrowse('选择文件夹', key='-BROWSE-')
-        ],
+        frame_folder = ttk.LabelFrame(self.root, text="选择文件夹", padding=10)
+        frame_folder.pack(fill="x", padx=10, pady=5)
+        
+        ttk.Entry(frame_folder, textvariable=self.folder_path, width=50).pack(side="left", padx=5)
+        ttk.Button(frame_folder, text="浏览...", command=self.browse_folder).pack(side="left")
         
         # 设置面板
-        sg.Frame('编号设置', [
-            [
-                sg.Text('起始数字:', size=(8, 1)),
-                sg.Spin(values=list(range(0, 10000)), initial_value=1, size=(8, 1), key='-START_NUM-'),
-                sg.Text('  数字位数:', size=(8, 1)),
-                sg.Combo(['3', '4', '5', '6'], default_value='4', size=(6, 1), key='-DIGITS-'),
-            ],
-            [
-                sg.Text('前缀:', size=(8, 1)),
-                sg.Input(default_text='', size=(20, 1), key='-PREFIX-'),
-                sg.Text('  保留原名:', size=(10, 1)),
-                sg.Checkbox('', default=False, key='-KEEP_ORIGINAL-'),
-                sg.Spin(values=list(range(0, 20)), initial_value=4, size=(4, 1), key='-KEEP_LENGTH-'),
-                sg.Text('个字符', size=(6, 1)),
-            ],
-        ]),
+        frame_settings = ttk.LabelFrame(self.root, text="编号设置", padding=10)
+        frame_settings.pack(fill="x", padx=10, pady=5)
+        
+        # 第一行
+        row1 = ttk.Frame(frame_settings)
+        row1.pack(fill="x", pady=3)
+        ttk.Label(row1, text="起始数字:").pack(side="left")
+        ttk.Spinbox(row1, from_=0, to=9999, textvariable=self.start_num, width=8).pack(side="left", padx=5)
+        ttk.Label(row1, text="  数字位数:").pack(side="left")
+        ttk.Combobox(row1, textvariable=self.digits, values=["3", "4", "5", "6"], width=5).pack(side="left", padx=5)
+        
+        # 第二行
+        row2 = ttk.Frame(frame_settings)
+        row2.pack(fill="x", pady=3)
+        ttk.Label(row2, text="前缀:").pack(side="left")
+        ttk.Entry(row2, textvariable=self.prefix, width=15).pack(side="left", padx=5)
+        ttk.Checkbutton(row2, text="保留原名", variable=self.keep_original).pack(side="left", padx=10)
+        ttk.Label(row2, text="字符数:").pack(side="left")
+        ttk.Spinbox(row2, from_=0, to=20, textvariable=self.keep_length, width=5).pack(side="left", padx=5)
         
         # 刷新按钮
-        [sg.Button('刷新文件列表', key='-REFRESH-')],
+        ttk.Button(frame_settings, text="刷新文件列表", command=self.refresh_files).pack(pady=5)
         
-        # 文件列表预览
-        sg.Frame('预览', [
-            [sg.Text('原文件名', size=(30, 1), font=('Helvetica', 10, 'bold'))],
-            [sg.Text('  ↓', font=('Helvetica', 10, 'bold'), text_color='green')],
-            [sg.Text('新文件名', size=(30, 1), font=('Helvetica', 10, 'bold'))],
-            [sg.Listbox(values=[], size=(50, 10), key='-PREVIEW-', font=('Courier', 10))],
-        ]),
+        # 预览列表
+        frame_preview = ttk.LabelFrame(self.root, text="预览", padding=10)
+        frame_preview.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        self.preview_listbox = tk.Listbox(frame_preview, font=("Courier", 10), height=12)
+        self.preview_listbox.pack(fill="both", expand=True)
+        
+        scrollbar = ttk.Scrollbar(self.preview_listbox, orient="vertical", command=self.preview_listbox.yview)
+        self.preview_listbox.configure(yscrollcommand=scrollbar.set)
         
         # 操作按钮
-        [
-            sg.Button('预览修改', key='-PREVIEW-', button_color=('white', 'green')),
-            sg.Button('应用修改', key='-APPLY-', button_color=('white', 'blue')),
-            sg.Button('重置', key='-RESET-'),
-            sg.Button('退出', key='-EXIT-')
-        ],
+        frame_buttons = ttk.Frame(self.root)
+        frame_buttons.pack(fill="x", padx=10, pady=5)
+        
+        ttk.Button(frame_buttons, text="预览修改", command=self.preview_rename).pack(side="left", padx=5)
+        ttk.Button(frame_buttons, text="应用修改", command=self.apply_rename).pack(side="left", padx=5)
+        ttk.Button(frame_buttons, text="重置", command=self.reset).pack(side="left", padx=5)
         
         # 状态栏
-        [sg.StatusBar('就绪', key='-STATUS-', size=(50, 1))],
-    ]
+        self.status_var = tk.StringVar(value="就绪")
+        ttk.Label(self.root, textvariable=self.status_var, relief="sunken").pack(fill="x", padx=10, pady=5)
     
-    window = sg.Window('WAV 文件重编号工具', layout, finalize=True)
+    def browse_folder(self):
+        folder = filedialog.askdirectory()
+        if folder:
+            self.folder_path.set(folder)
+            self.current_folder = folder
+            self.load_wav_files()
     
-    current_folder = ''
-    wav_files = []
+    def load_wav_files(self):
+        self.wav_files = []
+        if os.path.isdir(self.current_folder):
+            for f in sorted(os.listdir(self.current_folder)):
+                if f.lower().endswith('.wav'):
+                    self.wav_files.append(f)
+        self.status_var.set(f"已加载 {len(self.wav_files)} 个 WAV 文件")
     
-    while True:
-        event, values = window.read()
-        
-        if event in (sg.WIN_CLOSED, '-EXIT-'):
-            break
-        
-        elif event == '-BROWSE-':
-            current_folder = values['-FOLDER-']
-            window['-FOLDER-'].update(current_folder)
-            if current_folder:
-                wav_files = get_wav_files(current_folder)
-                window['-STATUS-'].update(f'已加载 {len(wav_files)} 个 WAV 文件')
-        
-        elif event == '-REFRESH-':
-            if current_folder:
-                wav_files = get_wav_files(current_folder)
-                window['-STATUS-'].update(f'已刷新 {len(wav_files)} 个 WAV 文件')
-        
-        elif event == '-PREVIEW-':
-            if not wav_files:
-                window['-STATUS-'].update('请先选择文件夹')
-                continue
-            
-            start_num = int(values['-START_NUM-'])
-            digits = int(values['-DIGITS-'])
-            prefix = values['-PREFIX-']
-            keep_original = values['-KEEP_ORIGINAL-']
-            keep_length = int(values['-KEEP_LENGTH-'])
-            
-            preview_items = []
-            for i, wav_file in enumerate(wav_files):
-                new_name = generate_new_name(
-                    wav_file, 
-                    start_num + i, 
-                    digits, 
-                    prefix, 
-                    keep_original, 
-                    keep_length
-                )
-                preview_items.append(f'{wav_file:<40} → {new_name}')
-            
-            window['-PREVIEW-'].update(values=preview_items)
-            window['-STATUS-'].update(f'预览 {len(preview_items)} 个文件')
-        
-        elif event == '-APPLY-':
-            if not wav_files:
-                window['-STATUS-'].update('请先选择文件夹')
-                continue
-            
-            start_num = int(values['-START_NUM-'])
-            digits = int(values['-DIGITS-'])
-            prefix = values['-PREFIX-']
-            keep_original = values['-KEEP_ORIGINAL-']
-            keep_length = int(values['-KEEP_LENGTH-'])
-            
-            # 确认对话框
-            confirm = sg.popup_yes_no(
-                f'确定要重命名 {len(wav_files)} 个文件吗？\n\n此操作不可撤销！',
-                title='确认修改'
-            )
-            
-            if confirm == 'Yes':
-                renamed_count = 0
-                errors = []
-                
-                for i, wav_file in enumerate(wav_files):
-                    try:
-                        new_name = generate_new_name(
-                            wav_file,
-                            start_num + i,
-                            digits,
-                            prefix,
-                            keep_original,
-                            keep_length
-                        )
-                        
-                        old_path = os.path.join(current_folder, wav_file)
-                        new_path = os.path.join(current_folder, new_name)
-                        
-                        if old_path != new_path:
-                            os.rename(old_path, new_path)
-                            renamed_count += 1
-                    
-                    except Exception as e:
-                        errors.append(f'{wav_file}: {str(e)}')
-                
-                # 刷新文件列表
-                wav_files = get_wav_files(current_folder)
-                window['-PREVIEW-'].update(values=[])
-                
-                if errors:
-                    sg.popup(f'完成！成功: {renamed_count} 个\n错误: {len(errors)} 个\n\n' + '\n'.join(errors))
-                else:
-                    sg.popup(f'完成！成功重命名 {renamed_count} 个文件')
-                
-                window['-STATUS-'].update(f'已完成 {renamed_count} 个文件的重命名')
-        
-        elif event == '-RESET-':
-            window['-START_NUM-'].update(1)
-            window['-DIGITS-'].update('4')
-            window['-PREFIX-'].update('')
-            window['-KEEP_ORIGINAL-'].update(False)
-            window['-KEEP_LENGTH-'].update(4)
-            window['-PREVIEW-'].update(values=[])
-            window['-STATUS-'].update('已重置')
+    def refresh_files(self):
+        if self.current_folder:
+            self.load_wav_files()
     
-    window.close()
+    def generate_new_name(self, original_name, index):
+        name_without_ext = Path(original_name).stem
+        new_num = self.start_num.get() + index
+        digits = int(self.digits.get())
+        prefix = self.prefix.get()
+        keep_length = self.keep_length.get()
+        
+        if prefix:
+            new_name = f"{prefix}{new_num:0{digits}d}"
+        else:
+            new_name = f"{new_num:0{digits}d}"
+        
+        if self.keep_original.get() and keep_length > 0:
+            new_name = f"{new_name}_{name_without_ext[:keep_length]}"
+        
+        return f"{new_name}.wav"
+    
+    def preview_rename(self):
+        if not self.wav_files:
+            messagebox.showwarning("警告", "请先选择文件夹")
+            return
+        
+        self.preview_listbox.delete(0, tk.END)
+        
+        for i, wav_file in enumerate(self.wav_files):
+            new_name = self.generate_new_name(wav_file, i)
+            self.preview_listbox.insert(tk.END, f"{wav_file:<40} → {new_name}")
+        
+        self.status_var.set(f"预览 {len(self.wav_files)} 个文件")
+    
+    def apply_rename(self):
+        if not self.wav_files:
+            messagebox.showwarning("警告", "请先选择文件夹")
+            return
+        
+        confirm = messagebox.askyesno("确认", f"确定要重命名 {len(self.wav_files)} 个文件吗？\n\n此操作不可撤销！")
+        if not confirm:
+            return
+        
+        renamed = 0
+        errors = []
+        
+        for i, wav_file in enumerate(self.wav_files):
+            try:
+                new_name = self.generate_new_name(wav_file, i)
+                old_path = os.path.join(self.current_folder, wav_file)
+                new_path = os.path.join(self.current_folder, new_name)
+                
+                if old_path != new_path:
+                    os.rename(old_path, new_path)
+                    renamed += 1
+            except Exception as e:
+                errors.append(f"{wav_file}: {str(e)}")
+        
+        # 刷新列表
+        self.load_wav_files()
+        self.preview_listbox.delete(0, tk.END)
+        
+        if errors:
+            messagebox.showwarning("完成", f"成功: {renamed} 个\n错误: {len(errors)} 个\n\n" + "\n".join(errors))
+        else:
+            messagebox.showinfo("完成", f"成功重命名 {renamed} 个文件")
+        
+        self.status_var.set(f"已完成 {renamed} 个文件的重命名")
+    
+    def reset(self):
+        self.start_num.set(1)
+        self.digits.set("4")
+        self.prefix.set("")
+        self.keep_original.set(False)
+        self.keep_length.set(4)
+        self.preview_listbox.delete(0, tk.END)
+        self.status_var.set("已重置")
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = WavRenamerApp(root)
+    root.mainloop()
