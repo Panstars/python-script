@@ -12,7 +12,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install pyinstaller
-      - run: pyinstaller --onefile --console --name wav_renamer wav_renamer.py
+      - run: pyinstaller --onefile --console --name wav_renamer --hidden-import=tkinter --hidden-import=tkinter.ttk --hidden-import=tkinter.filedialog --hidden-import=tkinter.messagebox --hidden-import=tkinter.constants wav_renamer.py
       - uses: actions/upload-artifact@v4
         with:
           name: executables
